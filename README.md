@@ -8,7 +8,7 @@
 
 ## 🔴 Live Dashboard
 
-****[→ View Live on Streamlit Cloud](https://prop-market-intelligence-khoshaba-odeesho.streamlit.app)****
+**[→ View Live on Streamlit Cloud](https://prop-market-intelligence-khoshaba-odeesho.streamlit.app)**
 
 ---
 
