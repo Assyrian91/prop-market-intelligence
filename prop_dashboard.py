@@ -147,22 +147,30 @@ SUBURB_COLORS = {
 
 @st.cache_resource
 def get_conn():
+    # Try Streamlit Cloud secrets first
     try:
-        # Streamlit Cloud secrets
         cfg = st.secrets["database"]
         return psycopg2.connect(
-            host=cfg["DB_HOST"], port=cfg["DB_PORT"],
-            dbname=cfg["DB_NAME"], user=cfg["DB_USER"],
-            password=cfg["DB_PASSWORD"], sslmode="require"
+            host     = cfg["DB_HOST"],
+            port     = int(cfg["DB_PORT"]),
+            dbname   = cfg["DB_NAME"],
+            user     = cfg["DB_USER"],
+            password = cfg["DB_PASSWORD"],
+            sslmode  = "require"
         )
-    except Exception:
-        # Local .env fallback
-        return psycopg2.connect(
-            host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"),
-            dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"), sslmode="require"
-        )
+    except KeyError:
+        pass
 
+    # Local .env fallback
+    load_dotenv()
+    return psycopg2.connect(
+        host     = os.getenv("DB_HOST"),
+        port     = int(os.getenv("DB_PORT", 5432)),
+        dbname   = os.getenv("DB_NAME"),
+        user     = os.getenv("DB_USER"),
+        password = os.getenv("DB_PASSWORD"),
+        sslmode  = "require"
+    )
 def query(sql, params=None):
     conn   = get_conn()
     cursor = conn.cursor()
