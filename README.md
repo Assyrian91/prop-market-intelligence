@@ -166,8 +166,7 @@ streamlit run prop_dashboard.py
 **Khoshaba Odeesho**  
 Data Analyst | AI Automation Engineer  
 Melbourne, Australia  
-
-[GitHub](https://github.com/Assyrian91) · [LinkedIn](https://linkedin.com/in/your-profile)
+[GitHub](https://github.com/Assyrian91) · [LinkedIn](https://www.linkedin.com/in/khoshaba-odeesho-17b5b92aa/)
 
 ---
 
