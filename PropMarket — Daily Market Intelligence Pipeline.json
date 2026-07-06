@@ -1,0 +1,496 @@
+{
+  "name": "PropMarket — Daily Market Intelligence Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "10ccee4e-67af-439e-8698-36598b04cc0c",
+      "name": "Daily 8am Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    suburb,\n    year,\n    median_price,\n    yoy_change_pct,\n    suburb_rank,\n    growth_category,\n    corridor_avg_price\nFROM prop_suburb_stats\nWHERE year = (SELECT MAX(year) FROM prop_suburb_stats)\nORDER BY suburb_rank;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        -144
+      ],
+      "id": "9ddf57e4-1394-4cb2-9f77-a180c87b3dd0",
+      "name": "Get Latest Suburb Stats",
+      "credentials": {
+        "postgres": {
+          "id": "xbbT0fh7X8T9gwXw",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    suburb,\n    start_price,\n    end_price,\n    total_growth_pct,\n    cagr_pct\nFROM prop_cagr_summary\nORDER BY cagr_pct DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        192
+      ],
+      "id": "0825bf33-d103-44b2-9df9-7bf81fe372dc",
+      "name": "Get CAGR Summary",
+      "credentials": {
+        "postgres": {
+          "id": "xbbT0fh7X8T9gwXw",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        352,
+        16
+      ],
+      "id": "63f883f7-9126-431e-83db-ce99a291bc5c",
+      "name": "Merge Stats and CAGR"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a structured market summary from all merged items\nconst items = $input.all();\n\n// Build suburb summary lines\nconst suburbLines = items.map(item => {\n  const d = item.json;\n  return `- ${d.suburb}: Median $${Number(d.median_price).toLocaleString()} | YoY: ${d.yoy_change_pct}% | Rank: ${d.suburb_rank}/7 | Category: ${d.growth_category} | CAGR: ${d.cagr_pct}% | Total Growth: ${d.total_growth_pct}%`;\n}).join('\\n');\n\nconst corridorAvg = items[0]?.json?.corridor_avg_price \n  ? `$${Number(items[0].json.corridor_avg_price).toLocaleString()}` \n  : 'N/A';\n\nconst topSuburb = items.reduce((a, b) => \n  (a.json.suburb_rank < b.json.suburb_rank ? a : b)\n).json.suburb;\n\nconst bestCagr = items.reduce((a, b) => \n  (Number(a.json.cagr_pct) > Number(b.json.cagr_pct) ? a : b)\n).json;\n\nconst prompt = `You are a professional Australian property market analyst.\n\nWrite a concise daily market briefing for the Melbourne Northern Growth Corridor.\nStart directly with a bold headline. Under 200 words. Use specific numbers.\nProfessional tone. Structure with these sections:\n\n**Market Snapshot**\n**Top Performer**\n**Key Trend**\n**Daily Verdict**\n\nDATA FOR TODAY:\nCorridor Average Price: ${corridorAvg}\nTop Ranked Suburb: ${topSuburb}\nBest Long-Term CAGR: ${bestCagr.suburb} at ${bestCagr.cagr_pct}% per year\n\nSUBURB BREAKDOWN:\n${suburbLines}`;\n\nreturn [{\n  json: {\n    prompt: prompt,\n    corridor_avg: corridorAvg,\n    top_suburb: topSuburb,\n    best_cagr_suburb: bestCagr.suburb,\n    best_cagr_pct: bestCagr.cagr_pct,\n    suburb_count: items.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        16
+      ],
+      "id": "abbdd776-745f-495e-9da1-652ce8568b94",
+      "name": "Build Gemini Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"nvidia/nemotron-3-super-120b-a12b:free\",\n  \"max_tokens\": 800,\n  \"messages\": [{\"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt) }}}]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        640,
+        16
+      ],
+      "id": "9379abd5-0475-4727-893a-4280c0526628",
+      "name": "Call OpenRouter AI"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nconst message = raw?.choices?.[0]?.message;\nconst reasoning = message?.reasoning || \"\";\n\n// The actual report starts after the thinking section\n// Look for the first bold headline marker\nlet report = reasoning;\n\nif (reasoning.includes('**Melbourne')) {\n  const startIndex = reasoning.indexOf('**Melbourne');\n  report = reasoning.substring(startIndex);\n}\n\n// Clean up any trailing thinking text after the report ends\n// The report ends after Daily Verdict section\nif (report.includes('**Daily Verdict**')) {\n  const verdictIndex = report.indexOf('**Daily Verdict**');\n  // Get 3 sentences after Daily Verdict\n  const afterVerdict = report.substring(verdictIndex);\n  const sentences = afterVerdict.split('\\n').slice(0, 4).join('\\n');\n  report = report.substring(0, verdictIndex) + sentences;\n}\n\nconst usage = raw?.usage || {};\n\nreturn [{\n  json: {\n    report_body: report.trim(),\n    prompt_tokens: usage.prompt_tokens || 0,\n    completion_tokens: usage.completion_tokens || 0,\n    total_tokens: usage.total_tokens || 0,\n    generated_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -144
+      ],
+      "id": "6b24b525-5822-416d-a90e-77a1135cbb82",
+      "name": "Extract Report Text"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "prop_ai_reports",
+          "mode": "list",
+          "cachedResultName": "prop_ai_reports"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sent_via_telegram": false,
+            "sent_via_email": false,
+            "report_type": "daily_corridor_brief",
+            "year": "={{ new Date().getFullYear() }}",
+            "report_title": "={{ 'Melbourne Northern Corridor — Daily Brief ' + new Date().toDateString() }}",
+            "report_body": "={{ $json.report_body }}",
+            "model_used": "nvidia/nemotron-3-super-120b-a12b:free",
+            "prompt_version": "v1.0"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "report_type",
+              "displayName": "report_type",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suburb",
+              "displayName": "suburb",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "year",
+              "displayName": "year",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "report_title",
+              "displayName": "report_title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "report_body",
+              "displayName": "report_body",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "key_insights",
+              "displayName": "key_insights",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "array",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "model_used",
+              "displayName": "model_used",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "prompt_version",
+              "displayName": "prompt_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "token_count",
+              "displayName": "token_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "generated_at",
+              "displayName": "generated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sent_via_telegram",
+              "displayName": "sent_via_telegram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sent_via_email",
+              "displayName": "sent_via_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "telegram_sent_at",
+              "displayName": "telegram_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email_sent_at",
+              "displayName": "email_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        -144
+      ],
+      "id": "6ff561f0-37a8-4a88-b8ae-48fd4b94e47b",
+      "name": "Save Report to Supabase",
+      "credentials": {
+        "postgres": {
+          "id": "xbbT0fh7X8T9gwXw",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "=761688002",
+        "text": "=🏠 *Melbourne Northern Corridor — Daily Brief*\n📅 {{ new Date().toDateString() }}\n\n{{ $json.report_body.replace(/\\*\\*/g, '*') }}\n\n📊 _Powered by PropMarket Intelligence_\n_github.com/Assyrian91_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        928,
+        -144
+      ],
+      "id": "88930ae2-b8eb-4e57-b00e-79163a05f688",
+      "name": "Send Telegram Daily Brief",
+      "webhookId": "02fb8a96-f912-4bbc-8ce5-758e719f6ec5",
+      "credentials": {
+        "telegramApi": {
+          "id": "pkHOGLK3mYzTTHuL",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE prop_ai_reports\nSET sent_via_telegram = TRUE,\n    telegram_sent_at = NOW()\nWHERE id = (\n    SELECT MAX(id) FROM prop_ai_reports\n    WHERE report_type = 'daily_corridor_brief'\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        80
+      ],
+      "id": "97181174-f4a9-4c3f-ae24-c0c012bb8610",
+      "name": "Update Telegram Status",
+      "credentials": {
+        "postgres": {
+          "id": "xbbT0fh7X8T9gwXw",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily 8am Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Suburb Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get CAGR Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Suburb Stats": {
+      "main": [
+        [
+          {
+            "node": "Merge Stats and CAGR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get CAGR Summary": {
+      "main": [
+        [
+          {
+            "node": "Merge Stats and CAGR",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Stats and CAGR": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call OpenRouter AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenRouter AI": {
+      "main": [
+        [
+          {
+            "node": "Extract Report Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Report Text": {
+      "main": [
+        [
+          {
+            "node": "Save Report to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Report to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Daily Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Daily Brief": {
+      "main": [
+        [
+          {
+            "node": "Update Telegram Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "94617787-8fe0-41c0-b8d2-52ffc7f09ca1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4882ae57fae7f5198ca4a60b64d52e13372c8da31b44d4c64833b5b89f9efda5"
+  },
+  "nodeGroups": [],
+  "id": "NA1Ji0A02nOauxfk",
+  "tags": [
+    {
+      "updatedAt": "2026-06-24T09:01:36.583Z",
+      "createdAt": "2026-06-24T09:01:36.583Z",
+      "id": "iqfTAcaqWZv4qG4d",
+      "name": "By Khoshaba Assyrian"
+    }
+  ]
+}
