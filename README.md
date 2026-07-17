@@ -1,5 +1,11 @@
 # 🏠 Melbourne Northern Corridor — Property Intelligence Platform
 
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=for-the-badge&logo=postgresql&logoColor=white)
+![XGBoost](https://img.shields.io/badge/XGBoost-ML_Model-EB5B25?style=for-the-badge)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![Gemini](https://img.shields.io/badge/Google_Gemini-2.0_Flash-4285F4?style=for-the-badge&logo=googlegemini&logoColor=white)
+
 > **End-to-end data science and AI automation project** covering 7 Melbourne 
 > northern corridor suburbs across 12 years (2014–2026).  
 > Built by **Khoshaba Odeesho** | [Assyrian AI](https://github.com/Assyrian91)
@@ -46,11 +52,12 @@ A fully automated property market intelligence platform that demonstrates:
 ---
 
 ## 🏗️ Architecture
-Victorian Gov Data (2014–2024)
 
+```
+Victorian Gov Data (2014–2024)
 Supplementary Sources (2025–2026)
-│
-▼
+        │
+        ▼
 Supabase PostgreSQL
 ┌─────────────────────────────────────┐
 │  prop_historical_prices  (91 rows)  │
@@ -61,19 +68,18 @@ Supabase PostgreSQL
 │  prop_live_listings       (46 rows) │
 │  prop_cagr_summary  [VIEW]          │
 └─────────────────────────────────────┘
-│
-┌───────┴────────┐
-▼                ▼
-Python ML         Gemini AI
-XGBoost           Narratives
-LinearReg         8 Reports
-│                │
-└───────┬────────┘
-▼
+        │
+   ┌────┴────┐
+   ▼         ▼
+Python ML   Gemini AI
+XGBoost     Narratives
+LinearReg   8 Reports
+   │         │
+   └────┬────┘
+        ▼
 Streamlit Dashboard
 5 Pages · Live · Public
-
-
+```
 
 ---
 
@@ -116,6 +122,8 @@ Streamlit Dashboard
 ---
 
 ## 📁 Repository Structure
+
+```
 prop-market-intelligence/
 ├── prop_dashboard.py        # Streamlit 5-page dashboard
 ├── prop_ml_model.py         # XGBoost + Linear Regression training
@@ -123,6 +131,8 @@ prop-market-intelligence/
 ├── requirements.txt         # Python dependencies
 ├── .gitignore               # Excludes .env and secrets
 └── README.md                # This file
+```
+
 ---
 
 ## 🚀 Running Locally
